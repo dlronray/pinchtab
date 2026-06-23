@@ -174,6 +174,63 @@ func TestHandleTabs_Success(t *testing.T) {
 	}
 }
 
+// TestHandleTabs_ManyTargetsReturnsBounded reproduces the busy-attached-browser
+// scenario (~90 page targets across signed-in profiles) and asserts the tab
+// listing path returns within a bounded time. Before the attach gate, attaching
+// armed browser-wide target discovery plus a per-worker stealth auto-attach that
+// saturated the single shared CDP connection, so this listing stalled for 90s+;
+// with the gate, listing is just the fast Target.getTargets round trip.
+func TestHandleTabs_ManyTargetsReturnsBounded(t *testing.T) {
+	const targetCount = 90
+	targets := make([]*target.Info, 0, targetCount)
+	for i := 0; i < targetCount; i++ {
+		targets = append(targets, &target.Info{
+			TargetID: target.ID(fmt.Sprintf("tab%d", i)),
+			URL:      fmt.Sprintf("https://example.com/%d", i),
+			Title:    fmt.Sprintf("Tab %d", i),
+			Type:     "page",
+		})
+	}
+
+	mockBridge := &MockBridge{targets: targets}
+	h := &Handlers{Bridge: mockBridge, Config: &config.RuntimeConfig{}}
+
+	req := httptest.NewRequest("GET", "/tabs", nil)
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	start := time.Now()
+	go func() {
+		h.HandleTabs(w, req)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("HandleTabs did not return within 5s for %d targets (saturation regression)", targetCount)
+	}
+
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("HandleTabs took %s for %d targets; expected a prompt return", elapsed, targetCount)
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	tabs, ok := resp["tabs"].([]any)
+	if !ok {
+		t.Fatalf("expected tabs array, got %T", resp["tabs"])
+	}
+	if len(tabs) != targetCount {
+		t.Errorf("expected %d tabs, got %d", targetCount, len(tabs))
+	}
+}
+
 func TestHandleTabs_CurrentTrackedTabIsReturnedFirst(t *testing.T) {
 	mockBridge := &MockBridge{
 		targets: []*target.Info{

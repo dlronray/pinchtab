@@ -91,7 +91,7 @@ func New(allocCtx, browserCtx context.Context, cfg *config.RuntimeConfig) *Bridg
 		b.SetDialogManager(b.Dialogs)
 		b.SetNetworkMonitor(b.netMonitor)
 		b.SetRouteManager(b.routeMgr)
-		if !b.quietStealthObservers() {
+		if !b.quietStealthObservers() && !b.isAttached() {
 			b.StartBrowserGuards()
 		}
 	}

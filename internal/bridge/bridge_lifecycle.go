@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/big"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,24 @@ import (
 
 func (b *Bridge) quietStealthObservers() bool {
 	return b != nil && b.Config != nil && stealth.NormalizeLevel(b.Config.StealthLevel) == stealth.LevelFull
+}
+
+// isAttached reports whether this bridge is driving an externally-managed
+// Chrome over CDP rather than a locally launched one. In attach mode the
+// browser belongs to the user (already authenticated, possibly dozens of
+// targets across signed-in profiles), so launch-time anti-bot features and
+// browser-wide target discovery must be skipped: they are irrelevant to an
+// already-authenticated browser and saturate the single shared CDP connection,
+// stalling tab listing. The launch-mode flag is set once InitChrome reports the
+// attach result; CDPAttachURL covers the pre-init window before that.
+func (b *Bridge) isAttached() bool {
+	if b == nil {
+		return false
+	}
+	if b.stealthLaunchMode == stealth.LaunchModeAttached {
+		return true
+	}
+	return b.Config != nil && strings.TrimSpace(b.Config.CDPAttachURL) != ""
 }
 
 func (b *Bridge) RestartStatus() (bool, time.Duration) {
@@ -70,7 +89,9 @@ func (b *Bridge) applyTargetStealth(ctx context.Context) {
 
 func (b *Bridge) tabSetup(ctx context.Context) {
 	b.applyTargetStealth(ctx)
-	b.installWorkerStealthParity(ctx)
+	if !b.isAttached() {
+		b.installWorkerStealthParity(ctx)
+	}
 	b.injectStealth(ctx)
 	if b.Config.NoAnimations {
 		if err := b.InjectNoAnimations(ctx); err != nil {
@@ -169,11 +190,7 @@ func (b *Bridge) EnsureChrome(cfg *config.RuntimeConfig) error {
 		b.SetOnAfterClose(func() { go b.SaveState() })
 		b.SetDialogManager(b.Dialogs)
 		b.SetNetworkMonitor(b.netMonitor)
-		// Attached sessions (CDP-attached to an existing, human-driven browser
-		// such as a real Edge profile) must never have their tabs auto-closed:
-		// the popup guard exists to police pinchtab's own owned/spawned
-		// instances, not a user's live SSO/MFA flows in their own browser.
-		if !b.quietStealthObservers() && launchMode != stealth.LaunchModeAttached {
+		if !b.quietStealthObservers() && !b.isAttached() {
 			b.StartBrowserGuards()
 		}
 	}
