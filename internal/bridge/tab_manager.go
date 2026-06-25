@@ -139,12 +139,16 @@ func (tm *TabManager) CreateTab(url string) (string, context.Context, context.Ca
 
 	// Use target.CreateTarget CDP protocol call to create a new tab.
 	// This works for both local and remote (CDP_URL) allocators.
+	// WithBackground(true): open the new tab WITHOUT raising/activating the
+	// browser window, so automation never steals the operator's foreground
+	// focus. The browser stays fully visible (non-headless) -- only the
+	// focus-grab is suppressed. (newWindow stays false, which background requires.)
 	var targetID target.ID
 	createCtx, createCancel := context.WithTimeout(tm.browserCtx, 30*time.Second)
 	if err := chromedp.Run(createCtx,
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
-			targetID, err = target.CreateTarget("about:blank").Do(ctx)
+			targetID, err = target.CreateTarget("about:blank").WithBackground(true).Do(ctx)
 			return err
 		}),
 	); err != nil {
