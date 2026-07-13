@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/pinchtab/pinchtab/internal/cli"
 	"github.com/pinchtab/pinchtab/internal/cli/output"
@@ -16,7 +18,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var clipboardExecCommand = exec.Command
+var (
+	clipboardExecCommand = exec.CommandContext
+	clipboardLookPath    = exec.LookPath
+	clipboardTimeout     = 2 * time.Second
+)
 
 var configCmd = &cobra.Command{
 	Use:   "config",
@@ -180,13 +186,21 @@ func copyToClipboard(text string) error {
 	var lastErr error
 
 	for _, candidate := range candidates {
-		if _, err := exec.LookPath(candidate.name); err != nil {
+		if _, err := clipboardLookPath(candidate.name); err != nil {
 			lastErr = err
 			continue
 		}
-		cmd := clipboardExecCommand(candidate.name, candidate.args...)
+		ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
+		cmd := clipboardExecCommand(ctx, candidate.name, candidate.args...)
 		cmd.Stdin = strings.NewReader(text)
-		if output, err := cmd.CombinedOutput(); err != nil {
+		output, err := cmd.CombinedOutput()
+		timedOut := ctx.Err() == context.DeadlineExceeded
+		cancel()
+		if timedOut {
+			lastErr = fmt.Errorf("%s timed out after %s", candidate.name, clipboardTimeout)
+			continue
+		}
+		if err != nil {
 			if len(strings.TrimSpace(string(output))) > 0 {
 				lastErr = fmt.Errorf("%s: %s", err, strings.TrimSpace(string(output)))
 			} else {
