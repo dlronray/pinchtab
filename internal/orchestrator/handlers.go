@@ -3,6 +3,8 @@ package orchestrator
 import (
 	"net/http"
 
+	"github.com/pinchtab/pinchtab/internal/bridge"
+	"github.com/pinchtab/pinchtab/internal/bridgeregistry"
 	"github.com/pinchtab/pinchtab/internal/httpx"
 	"github.com/pinchtab/pinchtab/internal/routes"
 )
@@ -129,7 +131,22 @@ func (o *Orchestrator) registerHandlers(mux *http.ServeMux, skipLaunch bool) {
 }
 
 func (o *Orchestrator) handleList(w http.ResponseWriter, r *http.Request) {
-	httpx.JSON(w, 200, o.List())
+	instances := o.List()
+	for _, entry := range bridgeregistry.List() {
+		instances = append(instances, bridge.Instance{
+			ID:         entry.ID(),
+			Port:       entry.Port,
+			URL:        "http://127.0.0.1:" + entry.Port,
+			Mode:       "headed",
+			Headless:   false,
+			Status:     "running",
+			StartTime:  entry.StartTime,
+			Attached:   true,
+			AttachType: "bridge",
+			CdpURL:     entry.Target,
+		})
+	}
+	httpx.JSON(w, 200, instances)
 }
 
 func (o *Orchestrator) handleAllTabs(w http.ResponseWriter, r *http.Request) {

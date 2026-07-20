@@ -9,9 +9,33 @@ import (
 	"testing"
 
 	"github.com/pinchtab/pinchtab/internal/bridge"
+	"github.com/pinchtab/pinchtab/internal/bridgeregistry"
 	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/pinchtab/pinchtab/internal/profiles"
 )
+
+func TestHandleListIncludesStandaloneBridge(t *testing.T) {
+	t.Setenv("PINCHTAB_BRIDGE_REGISTRY_DIR", t.TempDir())
+	entry, err := bridgeregistry.Register("ws://127.0.0.1:9222/devtools/browser/listed", "19874")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = bridgeregistry.Remove(entry) })
+
+	o := NewOrchestratorWithRunner(t.TempDir(), &mockRunner{portAvail: true})
+	w := httptest.NewRecorder()
+	o.handleList(w, httptest.NewRequest(http.MethodGet, "/instances", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var instances []bridge.Instance
+	if err := json.Unmarshal(w.Body.Bytes(), &instances); err != nil {
+		t.Fatal(err)
+	}
+	if len(instances) != 1 || instances[0].ID != entry.ID() || instances[0].CdpURL != entry.Target || !instances[0].Attached {
+		t.Fatalf("instances = %#v, want registered standalone bridge", instances)
+	}
+}
 
 func TestHandleLaunchByNameRejectsNameField(t *testing.T) {
 	o := NewOrchestratorWithRunner(t.TempDir(), &mockRunner{portAvail: true})
