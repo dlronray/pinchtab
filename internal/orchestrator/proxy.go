@@ -141,7 +141,18 @@ func (o *Orchestrator) proxyToURL(w http.ResponseWriter, r *http.Request, target
 			}
 			o.handleProxyResponseHeaders(origReq, resp, targetInstanceID)
 		},
-		OnResponse: enrichActivityFromResponse,
+		OnResponse: func(origReq *http.Request, body []byte) {
+			enrichActivityFromResponse(origReq, body)
+			if o.bindings == nil {
+				return
+			}
+			var resp struct {
+				TabID string `json:"tabId"`
+			}
+			if json.Unmarshal(body, &resp) == nil {
+				o.bindings.TrackSessionTab(sessionIDForRouting(origReq), strings.TrimSpace(resp.TabID))
+			}
+		},
 	})
 }
 
@@ -375,6 +386,9 @@ func (o *Orchestrator) handleProxyResponseHeaders(origReq *http.Request, resp *h
 	if o.instanceMgr != nil {
 		if tabID := tabClosePathID(origReq); tabID != "" {
 			o.instanceMgr.InvalidateTab(tabID)
+			if o.bindings != nil {
+				o.bindings.ForgetTab(tabID)
+			}
 		} else if origReq.Method == http.MethodPost && strings.TrimSpace(origReq.URL.Path) == "/close" {
 			if tabID := strings.TrimSpace(resp.Header.Get(activity.HeaderPTTabID)); tabID != "" {
 				o.instanceMgr.InvalidateTab(tabID)
@@ -388,6 +402,9 @@ func (o *Orchestrator) handleProxyResponseHeaders(origReq *http.Request, resp *h
 	if o.bindings != nil && targetInstanceID != "" {
 		if id := sessionIDForRouting(origReq); id != "" {
 			o.bindings.BindSession(id, targetInstanceID)
+			if tabID := strings.TrimSpace(resp.Header.Get(activity.HeaderPTTabID)); tabID != "" {
+				o.bindings.TrackSessionTab(id, tabID)
+			}
 		}
 		if id := strings.TrimSpace(origReq.Header.Get(activity.HeaderAgentID)); id != "" {
 			o.bindings.BindAgent(id, targetInstanceID)

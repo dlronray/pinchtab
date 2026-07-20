@@ -33,15 +33,21 @@ func (h *Handlers) enforceCurrentTabDomainPolicy(w http.ResponseWriter, r *http.
 		return "", true
 	}
 
+	explicitTab, _ := ctx.Value(explicitTabContextKey{}).(bool)
 	if provider, ok := h.Bridge.(tabPolicyStateProvider); ok {
 		if state, ok := provider.GetTabPolicyState(tabID); ok && !state.UpdatedAt.IsZero() {
 			if state.CurrentURL != "" {
 				h.recordResolvedURL(r, state.CurrentURL)
 			}
-			if time.Since(state.UpdatedAt) <= cachedTabPolicyTTL {
+			if explicitTab || time.Since(state.UpdatedAt) <= cachedTabPolicyTTL {
 				return h.applyTabPolicyState(w, state)
 			}
 		}
+	}
+	if explicitTab {
+		httpx.ErrorCode(w, http.StatusConflict, "tab_policy_state_unavailable",
+			"explicit tab is busy and its URL policy state is unavailable", true, map[string]any{"tabId": tabID})
+		return "", false
 	}
 
 	lookupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)

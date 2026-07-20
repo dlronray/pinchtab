@@ -244,6 +244,29 @@ func TestAgentSessionAPI_Revoke(t *testing.T) {
 	}
 }
 
+func TestAgentSessionAPI_RevokeReportsRemainingOwnedTabIDs(t *testing.T) {
+	store := newTestSessionStore()
+	id, _, _ := store.Create("agent-1", "")
+	mux := http.NewServeMux()
+	NewSessionAPI(store, func(gotID string) []string {
+		if gotID != id {
+			t.Fatalf("owned tabs requested for %q, want %q", gotID, id)
+		}
+		return []string{"tab-a", "tab-b"}
+	}).RegisterHandlers(mux)
+
+	req := httptest.NewRequest("POST", "/sessions/"+id+"/revoke", nil)
+	req.Header.Set("Authorization", "Bearer dashboard-token")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	resp := decodeSessionResponse(t, w)
+	tabs, ok := resp["remainingOwnedTabIds"].([]any)
+	if w.Code != http.StatusOK || !ok || len(tabs) != 2 || tabs[0] != "tab-a" || tabs[1] != "tab-b" {
+		t.Fatalf("status=%d response=%v", w.Code, resp)
+	}
+}
+
 func TestAgentSessionAPI_Revoke_NotFound(t *testing.T) {
 	store := newTestSessionStore()
 	mux := newTestSessionMux(store)

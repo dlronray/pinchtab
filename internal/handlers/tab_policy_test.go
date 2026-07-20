@@ -33,6 +33,50 @@ func (m *policyMockBridge) SetTabPolicyState(tabID string, state bridge.TabPolic
 	m.hasState = true
 }
 
+func TestExplicitTabUsesStalePolicyStateWithoutURLResolution(t *testing.T) {
+	b := &policyMockBridge{
+		state: bridge.TabPolicyState{
+			CurrentURL: "https://example.com/long-running",
+			UpdatedAt:  time.Now().Add(-time.Hour),
+		},
+		hasState: true,
+	}
+	h := New(b, &config.RuntimeConfig{
+		ActionTimeout:  time.Second,
+		AllowedDomains: []string{"example.com"},
+		IDPI:           config.IDPIConfig{Enabled: true, StrictMode: true},
+	}, nil, nil, nil)
+
+	req := httptest.NewRequest("POST", "/action", bytes.NewBufferString(`{"tabId":"tab1","kind":"click"}`))
+	w := httptest.NewRecorder()
+	h.HandleAction(w, req)
+
+	if w.Code != 200 || !b.actionExecuted {
+		t.Fatalf("status=%d body=%s actionExecuted=%v", w.Code, w.Body.String(), b.actionExecuted)
+	}
+}
+
+func TestExplicitTabWithoutPolicyStateReturnsPreciseBusyError(t *testing.T) {
+	b := &policyMockBridge{}
+	h := New(b, &config.RuntimeConfig{
+		ActionTimeout:  time.Second,
+		AllowedDomains: []string{"example.com"},
+		IDPI:           config.IDPIConfig{Enabled: true, StrictMode: true},
+	}, nil, nil, nil)
+
+	req := httptest.NewRequest("POST", "/action", bytes.NewBufferString(`{"tabId":"tab1","kind":"click"}`))
+	w := httptest.NewRecorder()
+	h.HandleAction(w, req)
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if w.Code != 409 || resp["code"] != "tab_policy_state_unavailable" || b.actionExecuted {
+		t.Fatalf("status=%d response=%v actionExecuted=%v", w.Code, resp, b.actionExecuted)
+	}
+}
+
 func TestHandleActionBlocksWhenCachedTabPolicyIsBlocked(t *testing.T) {
 	b := &policyMockBridge{
 		state: bridge.TabPolicyState{

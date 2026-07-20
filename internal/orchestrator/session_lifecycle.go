@@ -14,6 +14,13 @@ import (
 // detection on the bridge), so we deliberately do NOT propagate eviction
 // over the network. Dead entries on the instance get pushed out by normal
 // traffic; this avoids a separate trusted internal HTTP surface.
+func (o *Orchestrator) SessionOwnedTabIDs(sessionID string) []string {
+	if o == nil || o.bindings == nil {
+		return nil
+	}
+	return o.bindings.SessionTabs(sessionID)
+}
+
 func (o *Orchestrator) SessionLifecycleHook() session.LifecycleHook {
 	if o == nil {
 		return func(session.LifecycleEvent) {}

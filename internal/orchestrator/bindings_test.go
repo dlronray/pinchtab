@@ -19,6 +19,24 @@ func TestBindings_SessionRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBindings_SessionTabsReportedThenCleared(t *testing.T) {
+	b := NewBindings(nil)
+	b.TrackSessionTab("ses_1", "tab-b")
+	b.TrackSessionTab("ses_1", "tab-a")
+	b.TrackSessionTab("ses_1", "tab-a")
+	if got := b.SessionTabs("ses_1"); len(got) != 2 || got[0] != "tab-a" || got[1] != "tab-b" {
+		t.Fatalf("SessionTabs = %v, want [tab-a tab-b]", got)
+	}
+	b.ForgetTab("tab-a")
+	if got := b.SessionTabs("ses_1"); len(got) != 1 || got[0] != "tab-b" {
+		t.Fatalf("SessionTabs after forget = %v, want [tab-b]", got)
+	}
+	b.ClearSession("ses_1")
+	if got := b.SessionTabs("ses_1"); len(got) != 0 {
+		t.Fatalf("SessionTabs after clear = %v, want empty", got)
+	}
+}
+
 func TestBindings_AgentResolveBumpsIdle(t *testing.T) {
 	t0 := time.Unix(1_700_000_000, 0)
 	clock := t0

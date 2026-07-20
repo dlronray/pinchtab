@@ -83,7 +83,7 @@ func RunDashboard(cfg *config.RuntimeConfig, version string) {
 	})
 	var sessionAPI *dashboard.SessionAPI
 	if sessionStore.Enabled() {
-		sessionAPI = dashboard.NewSessionAPI(sessionStore)
+		sessionAPI = dashboard.NewSessionAPI(sessionStore, orch.SessionOwnedTabIDs)
 	}
 
 	// Wire up instance events to SSE broadcast

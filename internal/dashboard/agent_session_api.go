@@ -13,12 +13,17 @@ import (
 
 // SessionAPI handles CRUD operations for sessions.
 type SessionAPI struct {
-	store *session.Store
+	store       *session.Store
+	ownedTabIDs func(string) []string
 }
 
 // NewSessionAPI creates a new session API handler.
-func NewSessionAPI(store *session.Store) *SessionAPI {
-	return &SessionAPI{store: store}
+func NewSessionAPI(store *session.Store, ownedTabIDs ...func(string) []string) *SessionAPI {
+	a := &SessionAPI{store: store}
+	if len(ownedTabIDs) > 0 {
+		a.ownedTabIDs = ownedTabIDs[0]
+	}
+	return a
 }
 
 // RegisterHandlers registers session API routes.
@@ -124,9 +129,16 @@ func (a *SessionAPI) handleRevoke(w http.ResponseWriter, r *http.Request) {
 		httpx.ErrorCode(w, http.StatusForbidden, "forbidden", "not allowed to revoke this session", false, nil)
 		return
 	}
+	var ownedTabIDs []string
+	if a.ownedTabIDs != nil {
+		ownedTabIDs = a.ownedTabIDs(id)
+	}
+	if ownedTabIDs == nil {
+		ownedTabIDs = []string{}
+	}
 	if !a.store.Revoke(id) {
 		httpx.ErrorCode(w, http.StatusNotFound, "session_not_found", "session not found", false, nil)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.JSON(w, http.StatusOK, map[string]any{"status": "ok", "remainingOwnedTabIds": ownedTabIDs})
 }

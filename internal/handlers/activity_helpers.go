@@ -9,6 +9,8 @@ import (
 	"github.com/pinchtab/pinchtab/internal/bridge"
 )
 
+type explicitTabContextKey struct{}
+
 func (h *Handlers) tabContext(r *http.Request, tabID string) (context.Context, string, error) {
 	tabID = strings.TrimSpace(tabID)
 	scope := currentTabScopeFromRequest(r)
@@ -34,6 +36,9 @@ func (h *Handlers) tabContext(r *http.Request, tabID string) (context.Context, s
 	if err == nil {
 		h.setCurrentTabForRequest(r, resolvedID)
 		h.recordActivity(r, activity.Update{TabID: resolvedID})
+		if explicitTab {
+			ctx = context.WithValue(ctx, explicitTabContextKey{}, true)
+		}
 	}
 	return ctx, resolvedID, err
 }

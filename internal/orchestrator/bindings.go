@@ -16,11 +16,12 @@ import (
 // have no lifecycle signal, so agent bindings are bounded by an idle TTL and
 // an LRU cap to prevent unbounded growth.
 type Bindings struct {
-	mu        sync.RWMutex
-	session   map[string]string    // sessionID → instanceID
-	agent     map[string]string    // agentID   → instanceID
-	agentSeen map[string]time.Time // agentID   → last access
-	now       func() time.Time
+	mu          sync.RWMutex
+	session     map[string]string              // sessionID → instanceID
+	sessionTabs map[string]map[string]struct{} // sessionID → observed tab IDs
+	agent       map[string]string              // agentID   → instanceID
+	agentSeen   map[string]time.Time           // agentID   → last access
+	now         func() time.Time
 }
 
 // NewBindings returns an empty bindings table. Pass nil for `now` to use
@@ -30,10 +31,11 @@ func NewBindings(now func() time.Time) *Bindings {
 		now = time.Now
 	}
 	return &Bindings{
-		session:   make(map[string]string),
-		agent:     make(map[string]string),
-		agentSeen: make(map[string]time.Time),
-		now:       now,
+		session:     make(map[string]string),
+		sessionTabs: make(map[string]map[string]struct{}),
+		agent:       make(map[string]string),
+		agentSeen:   make(map[string]time.Time),
+		now:         now,
 	}
 }
 
@@ -87,13 +89,54 @@ func (b *Bindings) BindAgent(id, instanceID string) {
 	b.mu.Unlock()
 }
 
-// ClearSession removes a session binding. No-op if absent.
+func (b *Bindings) TrackSessionTab(id, tabID string) {
+	if b == nil || id == "" || tabID == "" {
+		return
+	}
+	b.mu.Lock()
+	if b.sessionTabs[id] == nil {
+		b.sessionTabs[id] = make(map[string]struct{})
+	}
+	b.sessionTabs[id][tabID] = struct{}{}
+	b.mu.Unlock()
+}
+
+func (b *Bindings) ForgetTab(tabID string) {
+	if b == nil || tabID == "" {
+		return
+	}
+	b.mu.Lock()
+	for sessionID, tabs := range b.sessionTabs {
+		delete(tabs, tabID)
+		if len(tabs) == 0 {
+			delete(b.sessionTabs, sessionID)
+		}
+	}
+	b.mu.Unlock()
+}
+
+func (b *Bindings) SessionTabs(id string) []string {
+	if b == nil || id == "" {
+		return nil
+	}
+	b.mu.RLock()
+	tabs := make([]string, 0, len(b.sessionTabs[id]))
+	for tabID := range b.sessionTabs[id] {
+		tabs = append(tabs, tabID)
+	}
+	b.mu.RUnlock()
+	sort.Strings(tabs)
+	return tabs
+}
+
+// ClearSession removes a session binding and its observed tab ownership. No-op if absent.
 func (b *Bindings) ClearSession(id string) {
 	if b == nil || id == "" {
 		return
 	}
 	b.mu.Lock()
 	delete(b.session, id)
+	delete(b.sessionTabs, id)
 	b.mu.Unlock()
 }
 
