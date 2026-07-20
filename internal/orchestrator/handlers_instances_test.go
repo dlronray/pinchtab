@@ -37,6 +37,29 @@ func TestHandleListIncludesStandaloneBridge(t *testing.T) {
 	}
 }
 
+func TestHandleStopByInstanceIDStopsRegisteredBridge(t *testing.T) {
+	old := stopRegisteredBridge
+	defer func() { stopRegisteredBridge = old }()
+	var stoppedID string
+	stopRegisteredBridge = func(id string) error {
+		stoppedID = id
+		return nil
+	}
+
+	o := NewOrchestratorWithRunner(t.TempDir(), &mockRunner{portAvail: true})
+	req := httptest.NewRequest(http.MethodPost, "/instances/bridge_123/stop", nil)
+	req.SetPathValue("id", "bridge_123")
+	w := httptest.NewRecorder()
+	o.handleStopByInstanceID(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	if stoppedID != "bridge_123" {
+		t.Fatalf("stopped bridge = %q, want bridge_123", stoppedID)
+	}
+}
+
 func TestHandleLaunchByNameRejectsNameField(t *testing.T) {
 	o := NewOrchestratorWithRunner(t.TempDir(), &mockRunner{portAvail: true})
 

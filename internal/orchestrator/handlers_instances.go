@@ -10,9 +10,12 @@ import (
 
 	"github.com/pinchtab/pinchtab/internal/authn"
 	"github.com/pinchtab/pinchtab/internal/bridge"
+	"github.com/pinchtab/pinchtab/internal/bridgeregistry"
 	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/pinchtab/pinchtab/internal/httpx"
 )
+
+var stopRegisteredBridge = bridgeregistry.Stop
 
 type startInstanceRequest struct {
 	ProfileID      string                 `json:"profileId,omitempty"`
@@ -70,7 +73,13 @@ func (o *Orchestrator) handleLaunchByName(w http.ResponseWriter, r *http.Request
 
 func (o *Orchestrator) handleStopByInstanceID(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := o.Stop(id); err != nil {
+	var err error
+	if strings.HasPrefix(id, "bridge_") {
+		err = stopRegisteredBridge(id)
+	} else {
+		err = o.Stop(id)
+	}
+	if err != nil {
 		httpx.Error(w, 404, err)
 		return
 	}

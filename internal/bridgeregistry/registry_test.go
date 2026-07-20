@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -65,6 +66,59 @@ func TestListRemovesDeadPID(t *testing.T) {
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stale registry file still exists: %v", err)
 	}
+}
+
+func TestStopTerminatesRegisteredBridgeAndRemovesEntry(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(registryDirEnv, dir)
+	ready := filepath.Join(dir, "ready")
+	cmd := exec.Command(os.Args[0], "-test.run=TestBridgeHelperProcess")
+	cmd.Env = append(os.Environ(), registryDirEnv+"="+dir, "PINCHTAB_BRIDGE_TEST_HELPER=1", "PINCHTAB_BRIDGE_TEST_READY="+ready)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		<-waited
+	})
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("helper did not register bridge")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	entries := List()
+	if len(entries) != 1 {
+		t.Fatalf("List() = %#v, want helper bridge", entries)
+	}
+	if err := Stop(entries[0].ID()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if entries := List(); len(entries) != 0 {
+		t.Fatalf("List() after Stop = %#v, want empty", entries)
+	}
+}
+
+func TestBridgeHelperProcess(t *testing.T) {
+	if os.Getenv("PINCHTAB_BRIDGE_TEST_HELPER") != "1" {
+		return
+	}
+	if _, err := Register("ws://127.0.0.1:9222/devtools/browser/stop-test", ""); err != nil {
+		os.Exit(2)
+	}
+	if err := os.WriteFile(os.Getenv("PINCHTAB_BRIDGE_TEST_READY"), []byte("ready"), 0o600); err != nil {
+		os.Exit(3)
+	}
+	select {}
 }
 
 func TestRegisterReplacesMalformedEntry(t *testing.T) {

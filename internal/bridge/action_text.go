@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/chromedp/chromedp"
@@ -55,6 +56,9 @@ func (b *Bridge) actionFill(ctx context.Context, req ActionRequest) (map[string]
 func (b *Bridge) actionPress(ctx context.Context, req ActionRequest) (map[string]any, error) {
 	if req.Key == "" {
 		return nil, fmt.Errorf("key required for press")
+	}
+	if strings.Contains(req.Key, "+") {
+		return nil, fmt.Errorf("unsupported key chord %q: press accepts one key only; Ctrl-style modifiers are not supported", req.Key)
 	}
 	if req.NodeID > 0 {
 		if err := focusBackendNode(ctx, req.NodeID); err != nil {

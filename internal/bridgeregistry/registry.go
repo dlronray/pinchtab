@@ -126,6 +126,47 @@ func List() []Entry {
 	return entries
 }
 
+// Stop terminates a registered standalone bridge and removes its registry entry.
+func Stop(id string) error {
+	for _, entry := range List() {
+		if entry.ID() != id {
+			continue
+		}
+		if !processMatchesStart(entry) {
+			return fmt.Errorf("bridge %q process identity changed", id)
+		}
+		p, err := process.NewProcess(int32(entry.PID))
+		if err != nil {
+			return fmt.Errorf("open bridge %q process: %w", id, err)
+		}
+		if err := p.Terminate(); err != nil {
+			return fmt.Errorf("terminate bridge %q: %w", id, err)
+		}
+		if !waitForExit(entry.PID, 5*time.Second) {
+			if err := p.Kill(); err != nil {
+				return fmt.Errorf("kill bridge %q: %w", id, err)
+			}
+			if !waitForExit(entry.PID, 2*time.Second) {
+				return fmt.Errorf("bridge %q process %d is still running", id, entry.PID)
+			}
+		}
+		return Remove(entry)
+	}
+	return fmt.Errorf("bridge %q not found", id)
+}
+
+func waitForExit(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		exists, err := process.PidExists(int32(pid))
+		if err == nil && !exists {
+			return true
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return false
+}
+
 func registryDir() (string, error) {
 	if dir := strings.TrimSpace(os.Getenv(registryDirEnv)); dir != "" {
 		return dir, nil
