@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	cdp "github.com/chromedp/cdproto/cdp"
@@ -13,6 +14,9 @@ import (
 )
 
 func shouldBlockPopupTarget(info *target.Info) bool {
+	if os.Getenv("PINCHTAB_DISABLE_POPUP_GUARD") == "true" || os.Getenv("PINCHTAB_ALLOW_POPUPS") == "true" {
+		return false
+	}
 	return info != nil && info.Type == TargetTypePage && info.OpenerID != ""
 }
 
