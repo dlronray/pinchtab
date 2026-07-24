@@ -169,7 +169,11 @@ func (b *Bridge) EnsureChrome(cfg *config.RuntimeConfig) error {
 		b.SetOnAfterClose(func() { go b.SaveState() })
 		b.SetDialogManager(b.Dialogs)
 		b.SetNetworkMonitor(b.netMonitor)
-		if !b.quietStealthObservers() {
+		// Attached sessions (CDP-attached to an existing, human-driven browser
+		// such as a real Edge profile) must never have their tabs auto-closed:
+		// the popup guard exists to police pinchtab's own owned/spawned
+		// instances, not a user's live SSO/MFA flows in their own browser.
+		if !b.quietStealthObservers() && launchMode != stealth.LaunchModeAttached {
 			b.StartBrowserGuards()
 		}
 	}
