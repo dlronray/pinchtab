@@ -241,6 +241,27 @@ func RedactSensitiveHeaders(pairs []NameValuePair) []NameValuePair {
 	return pairs
 }
 
+// RedactNetworkEntryHeaders returns a copy safe for ordinary API responses.
+func RedactNetworkEntryHeaders(entry NetworkEntry) NetworkEntry {
+	entry.RequestHeaders = redactSensitiveHeaderMap(entry.RequestHeaders)
+	entry.ResponseHeaders = redactSensitiveHeaderMap(entry.ResponseHeaders)
+	return entry
+}
+
+func redactSensitiveHeaderMap(headers map[string]string) map[string]string {
+	if headers == nil {
+		return nil
+	}
+	redacted := make(map[string]string, len(headers))
+	for name, value := range headers {
+		if sensitiveHeaderNames[strings.ToLower(name)] {
+			value = "[REDACTED]"
+		}
+		redacted[name] = value
+	}
+	return redacted
+}
+
 func contentTypeFromHeaders(headers map[string]string) string {
 	for k, v := range headers {
 		if strings.EqualFold(k, "content-type") {

@@ -251,6 +251,9 @@ func (h *Handlers) HandleNetwork(w http.ResponseWriter, r *http.Request) {
 	if filter.Limit > 0 && len(entries) > filter.Limit {
 		entries = entries[len(entries)-filter.Limit:]
 	}
+	for i := range entries {
+		entries[i] = observe.RedactNetworkEntryHeaders(entries[i])
+	}
 
 	if parseBoolQuery(r.URL.Query().Get("broken")) {
 		broken := observe.BrokenAssets(entries)
@@ -320,7 +323,7 @@ func (h *Handlers) HandleNetworkByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := map[string]any{
-		"entry": entry,
+		"entry": observe.RedactNetworkEntryHeaders(entry),
 		"tabId": resolvedTabID,
 	}
 
@@ -332,7 +335,7 @@ func (h *Handlers) HandleNetworkByID(w http.ResponseWriter, r *http.Request) {
 				httpx.Error(w, 404, fmt.Errorf("request %s not found", requestID))
 				return
 			}
-			result["entry"] = entry
+			result["entry"] = observe.RedactNetworkEntryHeaders(entry)
 		}
 		switch {
 		case bodyMode == networkBodyModeLiveOnly:
@@ -468,7 +471,7 @@ func (h *Handlers) HandleNetworkStream(w http.ResponseWriter, r *http.Request) {
 			if !filter.Match(entry) {
 				continue
 			}
-			data, err := json.Marshal(entry)
+			data, err := json.Marshal(observe.RedactNetworkEntryHeaders(entry))
 			if err != nil {
 				continue
 			}

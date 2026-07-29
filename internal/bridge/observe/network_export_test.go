@@ -55,6 +55,24 @@ func TestNetworkEntryToExport(t *testing.T) {
 	}
 }
 
+func TestRedactNetworkEntryHeaders(t *testing.T) {
+	entry := NetworkEntry{
+		RequestHeaders:  map[string]string{"Authorization": "Bearer secret", "X-Visible": "yes"},
+		ResponseHeaders: map[string]string{"Set-Cookie": "session=secret", "Content-Type": "text/plain"},
+	}
+
+	redacted := RedactNetworkEntryHeaders(entry)
+	if redacted.RequestHeaders["Authorization"] != "[REDACTED]" || redacted.ResponseHeaders["Set-Cookie"] != "[REDACTED]" {
+		t.Fatalf("sensitive headers not redacted: %+v", redacted)
+	}
+	if redacted.RequestHeaders["X-Visible"] != "yes" || redacted.ResponseHeaders["Content-Type"] != "text/plain" {
+		t.Fatalf("safe headers changed: %+v", redacted)
+	}
+	if entry.RequestHeaders["Authorization"] != "Bearer secret" || entry.ResponseHeaders["Set-Cookie"] != "session=secret" {
+		t.Fatalf("source entry mutated: %+v", entry)
+	}
+}
+
 func TestHAREncoder(t *testing.T) {
 	factory := GetFormat("har")
 	if factory == nil {

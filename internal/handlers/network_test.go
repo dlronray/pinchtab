@@ -115,6 +115,55 @@ func TestHandleNetwork_ReturnsEntries(t *testing.T) {
 	}
 }
 
+func TestNetworkResponsesRedactSensitiveHeaders(t *testing.T) {
+	nm := bridge.NewNetworkMonitor(100)
+	buf := nm.GetOrCreateBufferForTest("tab1")
+	buf.Add(bridge.NetworkEntry{
+		RequestID:       "secret-1",
+		URL:             "https://example.com",
+		Method:          "GET",
+		RequestHeaders:  map[string]string{"Authorization": "Bearer secret", "X-Visible": "yes"},
+		ResponseHeaders: map[string]string{"Set-Cookie": "session=secret", "Content-Type": "text/plain"},
+	})
+	h := newNetworkTestHandler(nm)
+
+	for _, tc := range []struct {
+		name string
+		run  func(*httptest.ResponseRecorder)
+	}{
+		{name: "list", run: func(w *httptest.ResponseRecorder) {
+			h.HandleNetwork(w, httptest.NewRequest("GET", "/network", nil))
+		}},
+		{name: "detail", run: func(w *httptest.ResponseRecorder) {
+			req := httptest.NewRequest("GET", "/network/secret-1", nil)
+			req.SetPathValue("requestId", "secret-1")
+			h.HandleNetworkByID(w, req)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.run(w)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+			}
+			body := w.Body.String()
+			if strings.Contains(body, "Bearer secret") || strings.Contains(body, "session=secret") {
+				t.Fatalf("response exposed sensitive headers: %s", body)
+			}
+			for _, want := range []string{"[REDACTED]", "X-Visible", "yes", "Content-Type", "text/plain"} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("response missing %q: %s", want, body)
+				}
+			}
+		})
+	}
+
+	entry, ok := buf.Get("secret-1")
+	if !ok || entry.RequestHeaders["Authorization"] != "Bearer secret" || entry.ResponseHeaders["Set-Cookie"] != "session=secret" {
+		t.Fatalf("redaction mutated the capture buffer: %+v", entry)
+	}
+}
+
 func TestHandleNetwork_FilterByMethod(t *testing.T) {
 	nm := bridge.NewNetworkMonitor(100)
 	seedBuffer(nm, "tab1")
@@ -837,7 +886,13 @@ func TestHandleNetworkStream_ReceivesEntries(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Add an entry — subscriber should receive it
-	buf.Add(bridge.NetworkEntry{RequestID: "stream1", URL: "https://example.com/api", Method: "GET"})
+	buf.Add(bridge.NetworkEntry{
+		RequestID:       "stream1",
+		URL:             "https://example.com/api",
+		Method:          "GET",
+		RequestHeaders:  map[string]string{"Authorization": "Bearer secret", "X-Visible": "yes"},
+		ResponseHeaders: map[string]string{"Set-Cookie": "session=secret"},
+	})
 
 	// Give time for the SSE write
 	time.Sleep(50 * time.Millisecond)
@@ -850,6 +905,12 @@ func TestHandleNetworkStream_ReceivesEntries(t *testing.T) {
 	}
 	if !strings.Contains(body, "stream1") {
 		t.Errorf("expected stream1 in SSE data, got: %s", body)
+	}
+	if strings.Contains(body, "Bearer secret") || strings.Contains(body, "session=secret") {
+		t.Fatalf("stream exposed sensitive headers: %s", body)
+	}
+	if !strings.Contains(body, "[REDACTED]") || !strings.Contains(body, "X-Visible") {
+		t.Fatalf("stream did not preserve safe headers or redaction marker: %s", body)
 	}
 }
 
