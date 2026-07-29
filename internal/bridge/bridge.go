@@ -196,7 +196,7 @@ func (b *Bridge) reinitWiring(browserCtx context.Context, opts reinitWiringOpts)
 	if b.TabManager == nil {
 		b.wireTabManager(browserCtx)
 	}
-	if opts.startBrowserGuards && !b.quietStealthObservers() {
+	if opts.startBrowserGuards && !b.quietStealthObservers() && !b.externalAttachMode() {
 		b.StartBrowserGuards()
 	}
 	if opts.initActionRegistry && b.Actions == nil {

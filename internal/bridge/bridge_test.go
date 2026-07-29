@@ -209,6 +209,27 @@ func TestQuietStealthObservers(t *testing.T) {
 	}
 }
 
+func TestReinitWiringBrowserGuardEligibility(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		bridge  *Bridge
+		started bool
+	}{
+		{name: "managed", bridge: &Bridge{Config: &config.RuntimeConfig{}}, started: true},
+		{name: "attached", bridge: &Bridge{Config: &config.RuntimeConfig{CDPAttachURL: "ws://127.0.0.1:9222/devtools/browser/test"}}},
+		{name: "remote CDP", bridge: &Bridge{Config: &config.RuntimeConfig{RemoteCDPURL: "ws://127.0.0.1:9223/devtools/browser/test"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.bridge.reinitWiring(context.Background(), reinitWiringOpts{startBrowserGuards: true})
+			available := false
+			tc.bridge.TabManager.guardOnce.Do(func() { available = true })
+			if started := !available; started != tc.started {
+				t.Fatalf("browser guards started = %v, want %v", started, tc.started)
+			}
+		})
+	}
+}
+
 func TestCreateTab_ReturnsRawCDPID(t *testing.T) {
 	// Verify TabIDFromCDPTarget returns raw CDP ID (no prefix)
 	tm := NewTabManager(context.Background(), &config.RuntimeConfig{}, nil, nil, nil)
